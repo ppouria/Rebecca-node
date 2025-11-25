@@ -21,7 +21,13 @@ from config import (
 from logger import logger
 from xray import XRayConfig, XRayCore
 
-import requests, platform, zipfile, io, os, stat, shutil
+import requests
+import platform
+import zipfile
+import io
+import os
+import stat
+import shutil
 from pathlib import Path
 
 app = FastAPI()

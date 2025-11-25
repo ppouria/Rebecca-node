@@ -6,7 +6,7 @@ import threading
 from collections import deque
 from contextlib import contextmanager
 
-from config import DEBUG, SSL_CERT_FILE, SSL_KEY_FILE, XRAY_API_HOST, XRAY_API_PORT, INBOUNDS
+from config import DEBUG, SSL_CERT_FILE, SSL_KEY_FILE, XRAY_API_HOST, XRAY_API_PORT, INBOUNDS, XRAY_LOG_DIR, XRAY_ASSETS_PATH
 from logger import logger
 
 
@@ -186,6 +186,35 @@ class XRayCore:
 
         if config.get('log', {}).get('logLevel') in ('none', 'error'):
             config['log']['logLevel'] = 'warning'
+
+        def _resolve_log_path(value, filename: str, base_dir: str) -> str | None:
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered == "none":
+                    return "none"
+                if not value.strip():
+                    return ""
+                candidate = Path(value.strip())
+                if not candidate.is_absolute() or candidate.parent == Path("/"):
+                    return str(Path(base_dir) / candidate.name)
+                return str(candidate)
+            return str(Path(base_dir) / filename)
+
+        base_log_dir = Path(XRAY_LOG_DIR or XRAY_ASSETS_PATH or "/var/log").expanduser()
+        log_config = config.get("log", {}) if isinstance(config.get("log", {}), dict) else {}
+        log_config.setdefault("access", "")
+        log_config.setdefault("error", "")
+        for key, fname in (("access", "access.log"), ("error", "error.log")):
+            resolved = _resolve_log_path(log_config.get(key), fname, base_log_dir)
+            log_config[key] = resolved
+            if resolved and isinstance(resolved, str) and resolved.lower() != "none":
+                try:
+                    Path(resolved).expanduser().parent.mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass
+        config["log"] = log_config
 
         cmd = [
             self.executable_path,
