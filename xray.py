@@ -5,8 +5,18 @@ import subprocess
 import threading
 from collections import deque
 from contextlib import contextmanager
+from pathlib import Path
 
-from config import DEBUG, SSL_CERT_FILE, SSL_KEY_FILE, XRAY_API_HOST, XRAY_API_PORT, INBOUNDS, XRAY_LOG_DIR, XRAY_ASSETS_PATH
+from config import (
+    DEBUG,
+    SSL_CERT_FILE,
+    SSL_KEY_FILE,
+    XRAY_API_HOST,
+    XRAY_API_PORT,
+    INBOUNDS,
+    XRAY_LOG_DIR,
+    XRAY_ASSETS_PATH,
+)
 from logger import logger
 
 
@@ -32,46 +42,30 @@ class XRayConfig(dict):
         return json.dumps(self, **json_kwargs)
 
     def _apply_api(self):
-        for inbound in self.get('inbounds', []).copy():
-            if inbound.get('protocol') == 'dokodemo-door' and inbound.get('tag') == 'API_INBOUND':
-                self['inbounds'].remove(inbound)
-                
-            elif INBOUNDS and inbound.get('tag') not in INBOUNDS:
-                self['inbounds'].remove(inbound)
+        for inbound in self.get("inbounds", []).copy():
+            if inbound.get("protocol") == "dokodemo-door" and inbound.get("tag") == "API_INBOUND":
+                self["inbounds"].remove(inbound)
 
-        for rule in self.get('routing', {}).get("rules", []):
-            api_tag = self.get('api', {}).get('tag')
-            if api_tag and rule.get('outboundTag') == api_tag:
-                self['routing']['rules'].remove(rule)
+            elif INBOUNDS and inbound.get("tag") not in INBOUNDS:
+                self["inbounds"].remove(inbound)
 
-        self["api"] = {
-            "services": [
-                "HandlerService",
-                "StatsService",
-                "LoggerService"
-            ],
-            "tag": "API"
-        }
+        for rule in self.get("routing", {}).get("rules", []):
+            api_tag = self.get("api", {}).get("tag")
+            if api_tag and rule.get("outboundTag") == api_tag:
+                self["routing"]["rules"].remove(rule)
+
+        self["api"] = {"services": ["HandlerService", "StatsService", "LoggerService"], "tag": "API"}
         self["stats"] = {}
         inbound = {
             "listen": self.api_host,
             "port": self.api_port,
             "protocol": "dokodemo-door",
-            "settings": {
-                "address": "127.0.0.1"
-            },
+            "settings": {"address": "127.0.0.1"},
             "streamSettings": {
                 "security": "tls",
-                "tlsSettings": {
-                    "certificates": [
-                        {
-                            "certificateFile": self.ssl_cert,
-                            "keyFile": self.ssl_key
-                        }
-                    ]
-                }
+                "tlsSettings": {"certificates": [{"certificateFile": self.ssl_cert, "keyFile": self.ssl_key}]},
             },
-            "tag": "API_INBOUND"
+            "tag": "API_INBOUND",
         }
         try:
             self["inbounds"].insert(0, inbound)
@@ -80,15 +74,10 @@ class XRayConfig(dict):
             self["inbounds"].insert(0, inbound)
 
         rule = {
-            "inboundTag": [
-                "API_INBOUND"
-            ],
-            "source": [
-                "127.0.0.1",
-                self.peer_ip
-            ],
+            "inboundTag": ["API_INBOUND"],
+            "source": ["127.0.0.1", self.peer_ip],
             "outboundTag": "API",
-            "type": "field"
+            "type": "field",
         }
         try:
             self["routing"]["rules"].insert(0, rule)
@@ -98,9 +87,7 @@ class XRayConfig(dict):
 
 
 class XRayCore:
-    def __init__(self,
-                 executable_path: str = "/usr/bin/xray",
-                 assets_path: str = "/usr/share/xray"):
+    def __init__(self, executable_path: str = "/usr/bin/xray", assets_path: str = "/usr/share/xray"):
         self.executable_path = executable_path
         self.assets_path = assets_path
 
@@ -112,17 +99,14 @@ class XRayCore:
         self._temp_log_buffers = {}
         self._on_start_funcs = []
         self._on_stop_funcs = []
-        self._env = {
-            "XRAY_LOCATION_ASSET": assets_path
-        }
+        self._env = {"XRAY_LOCATION_ASSET": assets_path}
 
         atexit.register(lambda: self.stop() if self.started else None)
 
     def get_version(self):
         cmd = [self.executable_path, "version"]
-        output = subprocess.check_output(
-            cmd, stderr=subprocess.STDOUT).decode('utf-8')
-        m = re.match(r'^Xray (\d+\.\d+\.\d+)', output)
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode("utf-8")
+        m = re.match(r"^Xray (\d+\.\d+\.\d+)", output)
         if m:
             return m.groups()[0]
 
@@ -184,8 +168,8 @@ class XRayCore:
         if self.started is True:
             raise RuntimeError("Xray is started already")
 
-        if config.get('log', {}).get('logLevel') in ('none', 'error'):
-            config['log']['logLevel'] = 'warning'
+        if config.get("log", {}).get("logLevel") in ("none", "error"):
+            config["log"]["logLevel"] = "warning"
 
         def _resolve_log_path(value, filename: str, base_dir: str) -> str | None:
             if value is None:
@@ -211,24 +195,24 @@ class XRayCore:
             log_config[key] = resolved
             if resolved and isinstance(resolved, str) and resolved.lower() != "none":
                 try:
-                    Path(resolved).expanduser().parent.mkdir(parents=True, exist_ok=True)
-                except Exception:
-                    pass
+                    log_path = Path(resolved).expanduser()
+                    log_dir = log_path.parent
+                    log_dir.mkdir(parents=True, exist_ok=True, mode=0o755)
+                    log_path.touch(exist_ok=True)
+                    logger.info(f"Log directory created: {log_dir}, log file: {log_path}")
+                except Exception as e:
+                    logger.error(f"Failed to create log directory/file for {key}: {e}")
+                    raise RuntimeError(f"Failed to create log directory for {key} at {resolved}: {e}")
         config["log"] = log_config
 
-        cmd = [
-            self.executable_path,
-            "run",
-            '-config',
-            'stdin:'
-        ]
+        cmd = [self.executable_path, "run", "-config", "stdin:"]
         self.process = subprocess.Popen(
             cmd,
             env=self._env,
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            universal_newlines=True
+            universal_newlines=True,
         )
         self.process.stdin.write(config.to_json())
         self.process.stdin.flush()

@@ -6,7 +6,8 @@ from config import DEBUG
 
 
 class Colors:
-    """ ANSI color codes """
+    """ANSI color codes"""
+
     BLACK = "\033[0;30m"
     RED = "\033[0;31m"
     GREEN = "\033[0;32m"
@@ -46,13 +47,12 @@ class Colors:
 
 
 class LoggerFormatter(logging.Formatter):
-
     FORMATS = {
-        logging.DEBUG: Colors.CYAN + '%(levelname)s: ' + Colors.END + "%(message)s",
-        logging.INFO: Colors.BLUE + '%(levelname)s: ' + Colors.END + "%(message)s",
-        logging.WARNING: Colors.YELLOW + '%(levelname)s: ' + Colors.END + "%(message)s",
-        logging.ERROR: Colors.RED + '%(levelname)s: ' + Colors.END + "%(message)s",
-        logging.CRITICAL: Colors.LIGHT_RED + '%(levelname)s: ' + Colors.END + "%(message)s",
+        logging.DEBUG: Colors.CYAN + "%(levelname)s: " + Colors.END + "%(message)s",
+        logging.INFO: Colors.BLUE + "%(levelname)s: " + Colors.END + "%(message)s",
+        logging.WARNING: Colors.YELLOW + "%(levelname)s: " + Colors.END + "%(message)s",
+        logging.ERROR: Colors.RED + "%(levelname)s: " + Colors.END + "%(message)s",
+        logging.CRITICAL: Colors.LIGHT_RED + "%(levelname)s: " + Colors.END + "%(message)s",
     }
 
     def format(self, record):
@@ -68,14 +68,9 @@ handler = logging.StreamHandler()
 handler.setLevel(logging.DEBUG if DEBUG else logging.INFO)
 handler.setFormatter(formatter)
 
-UVICORN_LOGGING_CONFIG['formatters']['default'] = {
-    '()': LoggerFormatter,
-    'fmt': '%(levelprefix)s %(message)s'
-}
+UVICORN_LOGGING_CONFIG["formatters"]["default"] = {"()": LoggerFormatter, "fmt": "%(levelprefix)s %(message)s"}
 
 logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
 logger.addHandler(handler)
 
-__all__ = [
-    "logger"
-]
+__all__ = ["logger"]

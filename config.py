@@ -3,13 +3,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-NODE_VERSION_FALLBACK = "0.0.2"
+NODE_VERSION_FALLBACK = "0.0.3"
 
 SERVICE_HOST = config("SERVICE_HOST", default="0.0.0.0")
-SERVICE_PORT = config('SERVICE_PORT', cast=int, default=62050)
+SERVICE_PORT = config("SERVICE_PORT", cast=int, default=62050)
 
 XRAY_API_HOST = config("XRAY_API_HOST", default="0.0.0.0")
-XRAY_API_PORT = config('XRAY_API_PORT', cast=int, default=62051)
+XRAY_API_PORT = config("XRAY_API_PORT", cast=int, default=62051)
 XRAY_EXECUTABLE_PATH = config("XRAY_EXECUTABLE_PATH", default="/usr/local/bin/xray")
 XRAY_ASSETS_PATH = config("XRAY_ASSETS_PATH", default="/usr/local/share/xray")
 XRAY_LOG_DIR = config("XRAY_LOG_DIR", default="").strip()
@@ -25,4 +25,4 @@ SSL_CLIENT_CERT_FILE = config("SSL_CLIENT_CERT_FILE", default="")
 
 DEBUG = config("DEBUG", cast=bool, default=False)
 
-INBOUNDS = config("INBOUNDS", cast=lambda v: [x.strip() for x in v.split(',')] if v else [], default="")
+INBOUNDS = config("INBOUNDS", cast=lambda v: [x.strip() for x in v.split(",")] if v else [], default="")

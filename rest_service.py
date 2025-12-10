@@ -3,8 +3,7 @@ import json
 import time
 from uuid import UUID, uuid4
 
-from fastapi import (APIRouter, Body, FastAPI, HTTPException, Request,
-                     WebSocket, status)
+from fastapi import APIRouter, Body, FastAPI, HTTPException, Request, WebSocket, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -29,6 +28,7 @@ import os
 import stat
 import shutil
 from pathlib import Path
+import subprocess
 
 app = FastAPI()
 
@@ -51,10 +51,7 @@ class Service(object):
         self.connected = False
         self.client_ip = None
         self.session_id = None
-        self.core = XRayCore(
-            executable_path=XRAY_EXECUTABLE_PATH,
-            assets_path=XRAY_ASSETS_PATH
-        )
+        self.core = XRayCore(executable_path=XRAY_EXECUTABLE_PATH, assets_path=XRAY_ASSETS_PATH)
         self.core_version = self.core.get_version()
         self.node_version = NODE_VERSION
         self.config = None
@@ -71,6 +68,7 @@ class Service(object):
         self.router.add_api_route("/update_geo", self.update_geo, methods=["POST"])
         self.router.add_api_route("/maintenance/restart", self.restart_node_service, methods=["POST"])
         self.router.add_api_route("/maintenance/update", self.update_node_service, methods=["POST"])
+        self.router.add_api_route("/access_logs", self.get_access_logs, methods=["POST"])
 
         self.router.add_websocket_route("/logs", self.logs)
 
@@ -87,19 +85,13 @@ class Service(object):
 
     def _call_node_service(self, path: str, timeout: int = 180):
         if not self._node_service_base:
-            raise HTTPException(
-                status_code=503,
-                detail="Node maintenance service is not configured on this node."
-            )
+            raise HTTPException(status_code=503, detail="Node maintenance service is not configured on this node.")
 
         url = f"{self._node_service_base}{path}"
         try:
             res = requests.post(url, timeout=timeout)
         except requests.RequestException as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Unable to reach node maintenance service: {exc}"
-            )
+            raise HTTPException(status_code=502, detail=f"Unable to reach node maintenance service: {exc}")
 
         try:
             data = res.json()
@@ -113,10 +105,7 @@ class Service(object):
 
     def match_session_id(self, session_id: UUID):
         if session_id != self.session_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Session ID mismatch."
-            )
+            raise HTTPException(status_code=403, detail="Session ID mismatch.")
         return True
 
     def response(self, **kwargs):
@@ -125,7 +114,7 @@ class Service(object):
             "started": self.core.started,
             "core_version": self.core_version,
             "node_version": self.node_version,
-            **kwargs
+            **kwargs,
         }
 
     def base(self):
@@ -137,7 +126,8 @@ class Service(object):
 
         if self.connected:
             logger.warning(
-                f'New connection from {self.client_ip}, Core control access was taken away from previous client.')
+                f"New connection from {self.client_ip}, Core control access was taken away from previous client."
+            )
             if self.core.started:
                 try:
                     self.core.stop()
@@ -147,9 +137,7 @@ class Service(object):
         self.connected = True
         logger.info(f'{self.client_ip} connected, Session ID = "{self.session_id}".')
 
-        return self.response(
-            session_id=self.session_id
-        )
+        return self.response(session_id=self.session_id)
 
     def disconnect(self):
         if self.connected:
@@ -177,12 +165,7 @@ class Service(object):
         try:
             config = XRayConfig(config, self.client_ip)
         except json.decoder.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "config": f'Failed to decode config: {exc}'
-                }
-            )
+            raise HTTPException(status_code=422, detail={"config": f"Failed to decode config: {exc}"})
 
         with self.core.get_logs() as logs:
             try:
@@ -190,28 +173,22 @@ class Service(object):
 
                 start_time = time.time()
                 end_time = start_time + 3
-                last_log = ''
+                last_log = ""
                 while time.time() < end_time:
                     while logs:
                         log = logs.popleft()
                         if log:
                             last_log = log
-                        if f'Xray {self.core_version} started' in log:
+                        if f"Xray {self.core_version} started" in log:
                             break
                     time.sleep(0.1)
 
             except Exception as exc:
                 logger.error(f"Failed to start core: {exc}")
-                raise HTTPException(
-                    status_code=503,
-                    detail=str(exc)
-                )
+                raise HTTPException(status_code=503, detail=str(exc))
 
         if not self.core.started:
-            raise HTTPException(
-                status_code=503,
-                detail=last_log
-            )
+            raise HTTPException(status_code=503, detail=last_log)
 
         return self.response()
 
@@ -232,12 +209,7 @@ class Service(object):
         try:
             config = XRayConfig(config, self.client_ip)
         except json.decoder.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "config": f'Failed to decode config: {exc}'
-                }
-            )
+            raise HTTPException(status_code=422, detail={"config": f"Failed to decode config: {exc}"})
 
         try:
             with self.core.get_logs() as logs:
@@ -251,34 +223,28 @@ class Service(object):
 
                 start_time = time.time()
                 end_time = start_time + 3
-                last_log = ''
+                last_log = ""
                 while time.time() < end_time:
                     while logs:
                         log = logs.popleft()
                         if log:
                             last_log = log
-                        if f'Xray {self.core_version} started' in log:
+                        if f"Xray {self.core_version} started" in log:
                             break
                     time.sleep(0.1)
 
         except Exception as exc:
             logger.error(f"Failed to restart core: {exc}")
-            raise HTTPException(
-                status_code=503,
-                detail=str(exc)
-            )
+            raise HTTPException(status_code=503, detail=str(exc))
 
         if not self.core.started:
-            raise HTTPException(
-                status_code=503,
-                detail=last_log
-            )
+            raise HTTPException(status_code=503, detail=last_log)
 
         return self.response()
 
     async def logs(self, websocket: WebSocket):
-        session_id = websocket.query_params.get('session_id')
-        interval = websocket.query_params.get('interval')
+        session_id = websocket.query_params.get("session_id")
+        interval = websocket.query_params.get("interval")
 
         try:
             session_id = UUID(session_id)
@@ -295,13 +261,11 @@ class Service(object):
                 return await websocket.close(reason="Invalid interval value", code=4400)
 
             if interval > 10:
-                return await websocket.close(
-                    reason="Interval must be more than 0 and at most 10 seconds", code=4400
-                )
+                return await websocket.close(reason="Interval must be more than 0 and at most 10 seconds", code=4400)
 
         await websocket.accept()
 
-        cache = ''
+        cache = ""
         last_sent_ts = 0
         with self.core.get_logs() as logs:
             while session_id == self.session_id:
@@ -310,7 +274,7 @@ class Service(object):
                         await websocket.send_text(cache)
                     except (WebSocketDisconnect, RuntimeError):
                         break
-                    cache = ''
+                    cache = ""
                     last_sent_ts = time.time()
 
                 if not logs:
@@ -325,7 +289,7 @@ class Service(object):
                 log = logs.popleft()
 
                 if interval:
-                    cache += f'{log}\n'
+                    cache += f"{log}\n"
                     continue
 
                 try:
@@ -365,7 +329,8 @@ class Service(object):
         if not os.path.exists(exe):
             raise HTTPException(500, detail="xray binary not found in archive")
         try:
-            st = os.stat(exe); os.chmod(exe, st.st_mode | stat.S_IEXEC)
+            st = os.stat(exe)
+            os.chmod(exe, st.st_mode | stat.S_IEXEC)
         except Exception:
             pass
         return exe
@@ -400,23 +365,24 @@ class Service(object):
         try:
             with open(compose_file, "r") as f:
                 content = f.read()
-            
+
             import yaml
+
             data = yaml.safe_load(content) or {"services": {"rebecca-node": {"environment": {}}}}
             env = data.get("services", {}).get("rebecca-node", {}).get("environment", {})
-            
+
             env[key] = value
-            
+
             volumes = data.get("services", {}).get("rebecca-node", {}).get("volumes", [])
             asset_volume = "/var/lib/reb/assets:/usr/local/share/xray"
             if asset_volume not in volumes:
                 volumes.append(asset_volume)
             data["services"]["rebecca-node"]["environment"] = env
             data["services"]["rebecca-node"]["volumes"] = volumes
-            
+
             with open(compose_file, "w") as f:
                 yaml.safe_dump(data, f, allow_unicode=True)
-            
+
             subprocess.run(["docker-compose", "-f", str(compose_file), "up", "-d"], check=True)
         except Exception as e:
             raise HTTPException(500, detail=f"Failed to update docker-compose.yml: {e}")
@@ -484,6 +450,72 @@ class Service(object):
             self._update_docker_compose(compose_file, "XRAY_ASSETS_PATH", "/usr/local/share/xray")
 
         return {"detail": f"Geo assets saved to {assets_dir}", "saved": saved}
+
+    def get_access_logs(self, session_id: UUID = Body(embed=True), max_lines: int = Body(default=500, embed=True)):
+        """
+        Retrieve access logs from this node for forwarding to master.
+        Returns the last N lines from the access log file.
+        """
+        self.match_session_id(session_id)
+
+        access_log_path = None
+        if self.config and isinstance(self.config, dict):
+            log_config = self.config.get("log", {})
+            if isinstance(log_config, dict):
+                access_log_path = log_config.get("access")
+
+        if not access_log_path or access_log_path == "none":
+            from config import XRAY_LOG_DIR, XRAY_ASSETS_PATH
+
+            base_dir = Path(XRAY_LOG_DIR or XRAY_ASSETS_PATH or "/var/log")
+            access_log_path = str(base_dir / "access.log")
+
+        access_log_file = Path(access_log_path)
+
+        if not access_log_file.exists():
+            return {"log_path": str(access_log_path), "exists": False, "lines": [], "total_lines": 0}
+
+        try:
+            lines = self._tail_file(access_log_file, max_lines)
+            return {"log_path": str(access_log_path), "exists": True, "lines": lines, "total_lines": len(lines)}
+        except Exception as e:
+            logger.error(f"Failed to read access logs: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to read access logs: {e}")
+
+    def _tail_file(self, path: Path, max_lines: int) -> list[str]:
+        """Read last N lines from a file efficiently."""
+        if max_lines <= 0:
+            return []
+
+        lines = []
+        buffer = b""
+        chunk_size = 8192
+        newline = b"\n"
+
+        with path.open("rb") as fp:
+            fp.seek(0, os.SEEK_END)
+            position = fp.tell()
+
+            while position > 0 and len(lines) < max_lines:
+                read_size = min(chunk_size, position)
+                position -= read_size
+                fp.seek(position)
+                data = fp.read(read_size)
+                buffer = data + buffer
+                parts = buffer.split(newline)
+                buffer = parts[0]
+
+                for line in reversed(parts[1:]):
+                    if len(lines) >= max_lines:
+                        break
+                    if line.endswith(b"\r"):
+                        line = line[:-1]
+                    lines.append(line)
+
+            if buffer and len(lines) < max_lines:
+                lines.append(buffer.rstrip(b"\r"))
+
+        return [line.decode("utf-8", errors="ignore") for line in reversed(lines)]
 
     def restart_node_service(self, session_id: UUID = Body(embed=True)):
         self.match_session_id(session_id)
