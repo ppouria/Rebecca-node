@@ -167,6 +167,8 @@ class Service(object):
         except json.decoder.JSONDecodeError as exc:
             raise HTTPException(status_code=422, detail={"config": f"Failed to decode config: {exc}"})
 
+        self.config = config
+
         with self.core.get_logs() as logs:
             try:
                 self.core.start(config)
@@ -210,6 +212,8 @@ class Service(object):
             config = XRayConfig(config, self.client_ip)
         except json.decoder.JSONDecodeError as exc:
             raise HTTPException(status_code=422, detail={"config": f"Failed to decode config: {exc}"})
+
+        self.config = config
 
         try:
             with self.core.get_logs() as logs:
@@ -458,17 +462,38 @@ class Service(object):
         """
         self.match_session_id(session_id)
 
+        def _resolve_log_path(value, filename: str, base_dir: Path) -> Path | None:
+            """
+            Resolve an access log path from config, honoring relative paths and 'none' sentinel.
+            """
+            if value is None:
+                return base_dir / filename
+            if isinstance(value, str):
+                lowered = value.strip().lower()
+                if lowered == "none":
+                    return None
+                if not value.strip():
+                    return base_dir / filename
+                candidate = Path(value.strip())
+                if not candidate.is_absolute() or candidate.parent == Path("/"):
+                    return base_dir / candidate.name
+                return candidate
+            return base_dir / filename
+
+        from config import XRAY_LOG_DIR, XRAY_ASSETS_PATH
+
+        base_dir = Path(XRAY_LOG_DIR or XRAY_ASSETS_PATH or "/var/log").expanduser()
         access_log_path = None
-        if self.config and isinstance(self.config, dict):
-            log_config = self.config.get("log", {})
-            if isinstance(log_config, dict):
-                access_log_path = log_config.get("access")
+        if self.config and hasattr(self.config, "get"):
+            try:
+                log_config = self.config.get("log", {}) or {}
+                if isinstance(log_config, dict):
+                    access_log_path = _resolve_log_path(log_config.get("access"), "access.log", base_dir)
+            except Exception:
+                access_log_path = None
 
-        if not access_log_path or access_log_path == "none":
-            from config import XRAY_LOG_DIR, XRAY_ASSETS_PATH
-
-            base_dir = Path(XRAY_LOG_DIR or XRAY_ASSETS_PATH or "/var/log")
-            access_log_path = str(base_dir / "access.log")
+        if access_log_path is None:
+            access_log_path = base_dir / "access.log"
 
         access_log_file = Path(access_log_path)
 
